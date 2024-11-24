@@ -22,6 +22,7 @@ langchain_nvidia_ai_endpoints
 crewai
 liteLLM
 pinecone
+psycopg2
 
 neo4j
 
