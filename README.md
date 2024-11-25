@@ -1,11 +1,1 @@
----
-title: ChatWithSQL
-emoji: 😻
-colorFrom: yellow
-colorTo: indigo
-sdk: streamlit
-sdk_version: 1.40.1
-app_file: app.py
-pinned: false
-license: apache-2.0
----
+Chat With SQL
