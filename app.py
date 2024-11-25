@@ -4,11 +4,14 @@ from PIL import Image
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from pathlib import Path
+from langchain.prompts import PromptTemplate,MessagesPlaceholder
 from langchain_community.utilities import SQLDatabase
 from langchain.agents.agent_types import AgentType
 from langchain.agents import create_sql_agent
 from langchain.callbacks import StreamlitCallbackHandler
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
+from langchain_core.output_parsers import StrOutputParser
+from tabulate import tabulate
 from sqlalchemy import create_engine
 import sqlite3
 
@@ -18,6 +21,7 @@ groq_api_key = os.getenv('GROQ_API_KEY')
 
 llm = ChatGroq(model='Gemma2-9b-It',groq_api_key=groq_api_key)
 
+
 img = Image.open('database.png')
 
 st.set_page_config(page_title='DataBase Homie',page_icon='database.png')
@@ -25,7 +29,7 @@ st.set_page_config(page_title='DataBase Homie',page_icon='database.png')
 col1,col2 = st.columns([1,3])
 
 with col1:
-    st.image(img,use_column_width=True)
+    st.image(img,use_container_width=True)
 
 with col2:
     st.title('Fetch from DataBase')
@@ -50,19 +54,29 @@ def configure_database(database_uri,host=None,user_name=None,password=None,datab
         # uri=True tells SQLite to interpret the database path as a URI.
         creator = lambda : sqlite3.connect(f"file:{db_file_path}?mode=ro",uri=True)
 
-        return SQLDatabase(create_engine('sqlite:///',creator=creator))
+        engine = create_engine('sqlite:///',creator=creator)
+
+        return SQLDatabase(engine)
 
     elif database_uri == 'USE_MYSQL':
         if not (database_uri and host and user_name and password and database):
             st.info("Please provide the connection details")
         else:
-            return SQLDatabase(create_engine(f'mysql+mysqlconnector://{user_name}:{password}@{host}/{database}'))
-        
+            try:
+                mysql_engine = create_engine(f'mysql+mysqlconnector://{user_name}:{password}@{host}/{database}')
+                return SQLDatabase(mysql_engine)
+            except Exception as e:
+                return False
     else:
         if not(database_uri and host and user_name and password and database):
             st.info("Please provide the connection details")
-        else:    
-            return SQLDatabase(create_engine(f'postgresql+psycopg2://{user_name}:{password}@{host}/{database}'))      
+        else:
+            try:
+                postgres_engine = create_engine(f'postgresql+psycopg2://{user_name}:{password}@{host}/{database}')
+                return SQLDatabase(postgres_engine)
+            except Exception as e:
+                return False
+      
 
 def toolkit_AND_action(DB,llm):
     # SQLDatabaseToolkit is for interacting with SQL databases using llm.
@@ -71,7 +85,8 @@ def toolkit_AND_action(DB,llm):
     agent = create_sql_agent(llm=llm,
                 toolkit=toolkit,
                 agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-                verbose=True)
+                verbose=True
+                )
     
     return agent
 
@@ -82,16 +97,19 @@ selected_option = st.sidebar.radio('Choose DataBase you want to use',options=rad
 if radio_option.index(selected_option) == 1:
     # A Uniform Resource Identifier (URI) is a unique sequence of characters that identifies 
     # an abstract or physical resource on the internet.
-    sql = st.sidebar.text_input(label='RDBMS',placeholder='MySQL')
+    sql = st.sidebar.text_input(label=':blue[***RDBMS***]',placeholder='MySQL')
     if sql in ['PostgreSQl','postgreSQL','postgresql','Postgresql']:
         database_uri = SQL
-        host = st.sidebar.text_input(label='host',placeholder='localhost:0000')
-        user_name = st.sidebar.text_input(label='user name')
-        password = st.sidebar.text_input(label='password',type='password')
-        database = st.sidebar.text_input(label='DataBase',placeholder='name of database')
+        host = st.sidebar.text_input(label=':orange[*host*]',placeholder='localhost:0000')
+        user_name = st.sidebar.text_input(label=':orange[*user name*]')
+        password = st.sidebar.text_input(label=':orange[*password*]',type='password')
+        database = st.sidebar.text_input(label=':orange[*dataBase*]',placeholder='name of database')
         if host and user_name and password and database:
             DB = configure_database(database_uri,host,user_name,password,database)
-            agent = toolkit_AND_action(DB,llm)
+            if DB == False:
+                st.warning('provide the credentials correctly')
+            else:
+                agent = toolkit_AND_action(DB,llm)
         else:
             st.warning('complete your details to configure database')
     elif sql in ['MySQl','mySQL','mysql']:
@@ -103,7 +121,10 @@ if radio_option.index(selected_option) == 1:
         DB = configure_database(database_uri,host,user_name,password,database)
         if host and user_name and password and database:
             DB = configure_database(database_uri,host,user_name,password,database)
-            agent = toolkit_AND_action(DB,llm)
+            if DB == False:
+                st.warning('provide the credentials correctly')
+            else:
+                agent = toolkit_AND_action(DB,llm)
         else:
             st.warning('complete your details to configure database')
     else:
@@ -114,9 +135,6 @@ else:
     DB = configure_database(database_uri)
     agent = toolkit_AND_action(DB,llm)
     
-# if not database_uri:
-#     st.info('Please select default DataBase or connect with your own DataBase')
-
 
 #### creating chat interface ####
 
@@ -128,16 +146,18 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     st.chat_message(message['role']).write(message['content'])
 
-
 prompt = st.chat_input(placeholder='ask for SQL query')
 
 if prompt:
-    st.session_state.messages.append({'role':'user','content':prompt})
+    st.session_state.messages.append({'role':'user','content':f"{prompt},give result as list of lists which can be converted into table"})
     st.chat_message('human').write(prompt)
 
     with st.chat_message('ai'):
         callback = StreamlitCallbackHandler(st.container(),expand_new_thoughts=True)
         response = agent.run(st.session_state.messages,callbacks=[callback])
         st.session_state.messages.append({'role':'ai','content':response})
-        st.write(response)
+        # print(type(eval(response)))
+        response = eval(response)
+        table = tabulate(response,tablefmt='grid')
+        st.text(StrOutputParser().parse(text=table))
 
