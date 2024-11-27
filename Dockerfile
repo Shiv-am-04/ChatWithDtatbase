@@ -1,23 +1,18 @@
+# Python base image
 FROM python:3.11.4
 
-# creating directory 
-WORKDIR /code
+# Set the working directory inside the container
+WORKDIR /app
 
-# copying the requirements.txt to code directory
-COPY ./requirements.txt /code/requirements.txt
+# Copy all files from the local directory to the container
+COPY . /app
 
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+# Upgrade pip and install dependencies (including Streamlit)
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-RUN useradd user
+# Expose Streamlit's default port
+EXPOSE 7860
 
-USER user
-
-ENV HOME=home/user \
-    PATH=home/user/.local/bin:$PATH
-
-WORKDIR $HOME/app
-
-COPY --chown=user . $HOME/app
-
-
-CMD ["streamlit","app.py","--host","0.0.0.0","--port","7860"]
+# Define the command to run the Streamlit app
+CMD ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0"]
